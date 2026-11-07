@@ -1,0 +1,84 @@
+name: Build Safari macOS App
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build WebExtension Assets
+        run: pnpm run build
+
+      - name: Setup Xcode Environment
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Prepare Xcode Project
+        id: prep-xcode
+        run: |
+          EXISTING_PROJ=$(find . -name "*.xcodeproj" -not -path "*/node_modules/*" -maxdepth 3 | head -n 1)
+          if [ -n "$EXISTING_PROJ" ]; then
+            echo "Found existing Xcode project: $EXISTING_PROJ"
+            echo "proj_path=$EXISTING_PROJ" >> $GITHUB_OUTPUT
+          else
+            echo "No Xcode project found. Converting from dist..."
+            xcrun safari-web-extension-converter dist \
+              --project-location ./build-safari \
+              --app-name "SafariExtensionApp" \
+              --bundle-identifier "com.local.safariextension" \
+              --no-open \
+              --force
+            
+            GENERATED_PROJ=$(find ./build-safari -name "*.xcodeproj" | head -n 1)
+            echo "proj_path=$GENERATED_PROJ" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compile macOS Application
+        run: |
+          PROJ_PATH="${{ steps.prep-xcode.outputs.proj_path }}"
+          SCHEME_NAME=$(xcodebuild -list -project "$PROJ_PATH" | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag' | tr -d ' ' | head -n 1)
+
+          echo "Compiling $PROJ_PATH with scheme: $SCHEME_NAME"
+
+          xcodebuild clean build \
+            -project "$PROJ_PATH" \
+            -scheme "$SCHEME_NAME" \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath ./DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-"
+
+      - name: Package App to ZIP
+        run: |
+          mkdir -p output
+          cd DerivedData/Build/Products/Release
+          zip -r -y "${{ github.workspace }}/output/SafariExtension-macOS.zip" *.app
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SafariExtension-macOS
+          path: output/SafariExtension-macOS.zip
