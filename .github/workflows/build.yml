@@ -2,7 +2,9 @@ name: Build Safari macOS App
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -39,7 +41,7 @@ jobs:
           EXISTING_PROJ=$(find . -name "*.xcodeproj" -not -path "*/node_modules/*" -maxdepth 3 | head -n 1)
           if [ -n "$EXISTING_PROJ" ]; then
             echo "Found existing Xcode project: $EXISTING_PROJ"
-            echo "proj_path=$EXISTING_PROJ" >> $GITHUB_OUTPUT
+            echo "proj_path=$EXISTING_PROJ" >> "$GITHUB_OUTPUT"
           else
             echo "No Xcode project found. Converting from dist..."
             xcrun safari-web-extension-converter dist \
@@ -48,9 +50,9 @@ jobs:
               --bundle-identifier "com.local.safariextension" \
               --no-open \
               --force
-            
+
             GENERATED_PROJ=$(find ./build-safari -name "*.xcodeproj" | head -n 1)
-            echo "proj_path=$GENERATED_PROJ" >> $GITHUB_OUTPUT
+            echo "proj_path=$GENERATED_PROJ" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compile macOS Application
